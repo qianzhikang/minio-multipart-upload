@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/db_upload_learning?allowMultiQueries=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=GMT%2B8
+    username: root
+    password: 12345678
+# MinIO设置
+minio:
+  # minio的ip
+  endpoint: http://127.0.0.1:9000
+  # 文件访问连接的ip
+  fileHost: http://127.0.0.1:9000
+  # bucket 名称
+  bucket: test
+  # 访问用户名
+  access-key: minioadmin
+  # 访问密钥
+  secret-key: minioadmin
+
+mybatis-plus:
+  mapper-locations: classpath:/mapper/*Mapper.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+

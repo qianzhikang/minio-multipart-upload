@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文件上传测试</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
+  </head>
+  <body>
+    <input id="file" type="file" onchange="handleFile(this.files)" />
+    <button id="submit" onclick="upload()">上传</button>
+  </body>
+  <script>
+    // 定义文件变量
+    var uploadFile = null;
+    // 分片大小 20MB
+    const DEFAULT_SIZE = 20 * 1024 * 1024;
+    // 文件md5值
+    var identifier = "";
+    // 获取文件
+    function handleFile(files) {
+      uploadFile = files[0];
+      console.log(uploadFile);
+    }
+
+    async function upload() {
+      // 获取文件的md5值
+      identifier = await md5(uploadFile, DEFAULT_SIZE);
+      // 打印
+      console.log(identifier);
+      // 请求接口，获取上传记录信息
+      let result = await axios.get(
+        "http://localhost:8080" + `/v1/minio/tasks/${identifier}`
+      );
+      let task = result.data.data;
+      // 打印
+      console.log(task);
+      // 没有记录
+      if (task == null) {
+        // 初始化上传文件数据
+        const initTaskData = {
+          identifier,
+          fileName: uploadFile.name,
+          totalSize: uploadFile.size,
+          chunkSize: 5 * 1024 * 1024,
+        };
+        // 创建上传任务
+        result = await axios({
+          url: "http://localhost:8080/v1/minio/tasks",
+          method: "POST",
+          data: initTaskData,
+        });
+        // 打印任务列表
+        task = result.data.data;
+        console.log(task);
+      }
+      // 是否已经上传完毕
+      const finished = task.finished;
+      // 访问路径
+      const path = task.path;
+      // 已经上传完毕的分片记录
+      const taskRecord = task.taskRecord;
+      // 完成后直接返回访问连接
+      if (finished) {
+        // path就是文件的访问路径
+        console.log(`上传完毕文件，访问路径为${path}`);
+      } else {
+        // 未完成
+        let uploadedSize = 0; // 已上传的大小
+        const totalSize = file.size || 0; // 文件总大小
+        let exitPartList = taskRecord.exitPartList; // 已经上传的切片
+        let chunkSize = taskRecord.chunkSize; // 切片大小
+        let chunkNum = taskRecord.chunkNum; // 总切片数量
+
+        // 上传分片方法
+        const uploadNext = async (partNumber) => {
+          // 计算文件切片开始位置
+          const start = new Number(chunkSize) * (partNumber - 1);
+          // 计算文件切片结束位置
+          const end = start + new Number(chunkSize);
+          // 切片
+          const blob = uploadFile.slice(start, end);
+          // 获取文件切片上传的url
+          const response = await axios({
+            url: `http://localhost:8080/v1/minio/tasks/${identifier}/${partNumber}`,
+            method: "GET",
+          });
+          // 获取结果的code
+          const code = response.data.code;
+          // 获取到的上传url
+          const data = response.data.data;
+          // 若获取成功，且url非空
+          if (code === 200 && data) {
+            // 执行上传切片请求
+            await axios.request({
+              url: data,
+              method: "PUT",
+              data: blob,
+              headers: { "Content-Type": "application/octet-stream" },
+            });
+            // 返回上传的切片数和此次上传切片的大小
+            return Promise.resolve({
+              partNumber: partNumber,
+              uploadedSize: blob.size,
+            });
+          }
+          // 失败逻辑
+          return Promise.reject(`分片${partNumber}， 获取上传地址失败`);
+        };
+
+        // 创建并行请求队列
+        const promises = [];
+        // 循环添加切片
+        for (let i = 1; i <= chunkNum; i++) {
+          // 获取的上传记录中，存在切片已经上传完毕，则跳过这个切片的上传
+          if (exitPartList && exitPartList.find((exitPart) => exitPart.partNumber == i)) {
+            console.log("存在" + i);
+            continue;
+          }
+          // 将未上传的切片请求添加进请求队列
+          promises.push(uploadNext(i));
+          console.log(`添加${i}`);
+        }
+        // 执行请求队列
+        const results = await Promise.all(promises);
+        console.log(results);
+        // 若未发生错误，请求合并接口，传入md5唯一标识，合并所有的切片文件
+        if (results) {
+          let response = await axios({
+            url: `http://localhost:8080/v1/minio/tasks/merge/${identifier}`,
+            method: "POST",
+          });
+          // 成功返回
+          console.log(response.data);
+          console.log("success")
+        }
+      }
+    }
+
+    // md5计算值
+    function md5(file, chunkSize) {
+      return new Promise((resolve, reject) => {
+        const startMs = new Date().getTime();
+        let blobSlice =
+          File.prototype.slice ||
+          File.prototype.mozSlice ||
+          File.prototype.webkitSlice;
+        let chunks = Math.ceil(file.size / chunkSize);
+        let currentChunk = 0;
+        let spark = new SparkMD5.ArrayBuffer(); //追加数组缓冲区。
+        let fileReader = new FileReader(); //读取文件
+        fileReader.onload = function (e) {
+          spark.append(e.target.result);
+          currentChunk++;
+          if (currentChunk < chunks) {
+            loadNext();
+          } else {
+            const md5 = spark.end(); //完成md5的计算，返回十六进制结果。
+            console.log(
+              "文件md5计算结束，总耗时：",
+              (new Date().getTime() - startMs) / 1000,
+              "s"
+            );
+            resolve(md5);
+          }
+        };
+        fileReader.onerror = function (e) {
+          reject(e);
+        };
+
+        function loadNext() {
+          console.log("当前part number：", currentChunk, "总块数：", chunks);
+          let start = currentChunk * chunkSize;
+          let end = start + chunkSize;
+          end > file.size && (end = file.size);
+          fileReader.readAsArrayBuffer(blobSlice.call(file, start, end));
+        }
+        loadNext();
+      });
+    }
+  </script>
+</html>
