@@ -4,7 +4,7 @@
 >
 > 原仓库：https://gitee.com/Gary2016/minio-upload
 
-`完整示例调用：`----> `src/main/resources/static/index.html`
+`完整示例调用：`----> https://github.com/qianzhikang/minio-multipart-upload/blob/main/src/main/resources/static/html/index.html
 
 ## 流程图
 
